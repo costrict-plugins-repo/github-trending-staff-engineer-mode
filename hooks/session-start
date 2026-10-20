@@ -1,0 +1,136 @@
+#!/usr/bin/env bash
+# SessionStart hook for staff-engineer-mode plugin integrations.
+
+set -euo pipefail
+
+case "$0" in
+  */*) script_dir_arg="${0%/*}" ;;
+  *) script_dir_arg="." ;;
+esac
+SCRIPT_DIR="$((cd "$script_dir_arg" 2>/dev/null && pwd) || printf '%s\n' "$script_dir_arg")"
+PLUGIN_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+ROUTER_PATH="${PLUGIN_ROOT}/skills/staff-engineer-mode/SKILL.md"
+SPECIALIST_ROOT="${PLUGIN_ROOT}/specialists"
+TEMPLATE_ROOT="${PLUGIN_ROOT}/skills/_shared/assets/templates"
+BOOTSTRAP_TEMPLATE_PATH="${PLUGIN_ROOT}/skills/staff-engineer-mode/references/bootstrap-context.md"
+EVENT_HOOK_PATH="${PLUGIN_ROOT}/hooks/agent-event-policy"
+
+escape_for_json() {
+  local s="$1"
+  s="${s//\\/\\\\}"
+  s="${s//\"/\\\"}"
+  s="${s//$'\n'/\\n}"
+  s="${s//$'\r'/\\r}"
+  s="${s//$'\t'/\\t}"
+  printf '%s' "$s"
+}
+
+linebreak_collapse_safe() {
+  local s="$1"
+  s="${s//$'\n'/$' \n'}"
+  printf '%s' "$s"
+}
+
+emit_context() {
+  local session_context="$1"
+  session_context="$(linebreak_collapse_safe "$session_context")"
+  session_context="$(escape_for_json "$session_context")"
+
+  if [ -n "${CURSOR_PLUGIN_ROOT:-}" ]; then
+    printf '{\n  "additional_context": "%s"\n}\n' "$session_context"
+  elif [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -z "${COPILOT_CLI:-}" ]; then
+    printf '{\n  "hookSpecificOutput": {\n    "hookEventName": "SessionStart",\n    "additionalContext": "%s"\n  }\n}\n' "$session_context"
+  else
+    printf '{\n  "additionalContext": "%s"\n}\n' "$session_context"
+  fi
+}
+
+path_status() {
+  local kind="$1"
+  local path="$2"
+
+  if [ "$kind" = "dir" ]; then
+    if [ -d "$path" ] && [ -r "$path" ] && [ -x "$path" ]; then
+      printf 'readable'
+    else
+      printf 'missing-or-unreadable'
+    fi
+    return 0
+  fi
+
+  if [ -f "$path" ] && [ -r "$path" ]; then
+    printf 'readable'
+  else
+    printf 'missing-or-unreadable'
+  fi
+}
+
+fallback_context() {
+  local template_status
+  local router_status
+  local bootstrap_status
+  local specialist_status
+  local event_hook_status
+
+  router_status="$(path_status file "$ROUTER_PATH")"
+  bootstrap_status="$(path_status file "$BOOTSTRAP_TEMPLATE_PATH")"
+  specialist_status="$(path_status dir "$SPECIALIST_ROOT")"
+  template_status="$(path_status dir "$TEMPLATE_ROOT")"
+  event_hook_status="$(path_status file "$EVENT_HOOK_PATH")"
+
+  printf '%s\n' 'staff-engineer-mode bootstrap context unavailable.'
+  printf 'PLUGIN_ROOT=%s\n' "$PLUGIN_ROOT"
+  printf 'ROUTER_PATH=%s\n' "$ROUTER_PATH"
+  printf 'SPECIALIST_ROOT=%s\n' "$SPECIALIST_ROOT"
+  printf 'TEMPLATE_ROOT=%s\n' "$TEMPLATE_ROOT"
+  printf 'EVENT_HOOK=%s\n' "$EVENT_HOOK_PATH"
+  printf 'ROUTER_STATUS=%s\n' "$router_status"
+  printf 'BOOTSTRAP_STATUS=%s\n' "$bootstrap_status"
+  printf 'SPECIALIST_STATUS=%s\n' "$specialist_status"
+  printf 'TEMPLATE_STATUS=%s\n' "$template_status"
+  printf 'EVENT_HOOK_STATUS=%s\n' "$event_hook_status"
+  printf '\n'
+
+  if [ "$router_status" = "readable" ] && [ "$specialist_status" = "readable" ] && [ "$template_status" = "readable" ]; then
+    printf '%s\n' 'Do not fail this hook. Staff Engineer Mode routing and artifact-template files are readable; use ROUTER_PATH, SPECIALIST_ROOT, and TEMPLATE_ROOT if engineering-system work starts, but tell the user bootstrap context could not be loaded.'
+  else
+    printf '%s\n' 'Do not fail this hook. Staff Engineer Mode routing files are not fully readable; tell the user the plugin install is incomplete and ask them to repair or reinstall it before relying on Staff Engineer Mode guidance.'
+  fi
+}
+
+read_file() {
+  local path="$1"
+  local line
+  while IFS= read -r line || [ -n "$line" ]; do
+    printf '%s\n' "$line"
+  done < "$path"
+}
+
+if [ ! -r "$ROUTER_PATH" ] \
+  || [ ! -r "$BOOTSTRAP_TEMPLATE_PATH" ] \
+  || [ ! -d "$SPECIALIST_ROOT" ] \
+  || [ ! -r "$SPECIALIST_ROOT" ] \
+  || [ ! -x "$SPECIALIST_ROOT" ] \
+  || [ ! -d "$TEMPLATE_ROOT" ] \
+  || [ ! -r "$TEMPLATE_ROOT" ] \
+  || [ ! -x "$TEMPLATE_ROOT" ]; then
+  emit_context "$(fallback_context)"
+  exit 0
+fi
+
+bootstrap_template="$(read_file "$BOOTSTRAP_TEMPLATE_PATH" 2>/dev/null || true)"
+if [ -z "$bootstrap_template" ]; then
+  emit_context "$(fallback_context)"
+  exit 0
+fi
+
+current_repo="$(git -C "$PWD" rev-parse --show-toplevel 2>/dev/null || true)"
+session_context="${bootstrap_template//\{\{SPECIALIST_ROOT\}\}/$SPECIALIST_ROOT}"
+session_context="${session_context//\{\{TEMPLATE_ROOT\}\}/$TEMPLATE_ROOT}"
+session_context="${session_context//\{\{ROUTER_PATH\}\}/${ROUTER_PATH}}"
+session_context="${session_context//\{\{EVENT_HOOK\}\}/${EVENT_HOOK_PATH}}"
+session_context="${session_context//\{\{CURRENT_REPO\}\}/${current_repo}}"
+session_context="${session_context//\{\{TOOL_MAPPING\}\}/}"
+emit_context "$session_context"
+
+exit 0

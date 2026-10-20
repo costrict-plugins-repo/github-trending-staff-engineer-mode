@@ -1,0 +1,24 @@
+# Python/runtime caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Node dependencies
+node_modules/
+
+# Local environments and secrets
+.env
+.env.*
+!.env.example
+.venv/
+venv/
+
+# Logs/temp
+*.log
+tmp/
+temp/
+evals/runs/
+
+# Local docs scratchpad (not part of the skill pack)
+docs/
+decisions/

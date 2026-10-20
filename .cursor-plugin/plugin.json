@@ -1,0 +1,24 @@
+{
+  "name": "staff-engineer-mode",
+  "displayName": "Staff Engineer Mode",
+  "description": "Applies engineering best practices to reliability, security, delivery, data, and architecture work.",
+  "version": "3.0.1",
+  "author": {
+    "name": "sirmarkz"
+  },
+  "homepage": "https://github.com/sirmarkz/staff-engineer-mode",
+  "repository": "https://github.com/sirmarkz/staff-engineer-mode",
+  "license": "MIT",
+  "keywords": [
+    "skills",
+    "staff-engineer",
+    "engineering-lifecycle",
+    "devops",
+    "sre",
+    "reliability",
+    "security",
+    "architecture"
+  ],
+  "skills": "./skills/",
+  "hooks": "./hooks/hooks-cursor.json"
+}
